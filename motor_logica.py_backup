@@ -1,0 +1,129 @@
+import pandas as pd
+import unicodedata
+import os
+
+class MotorJogo:
+    def __init__(self, data_path="data/jogadores.csv"):
+        self.data_path = data_path
+        self.df_jogadores = self._carregar_dados()
+        
+        # Pontuação base
+        self.pontos_categoria = {
+            "LENDA": 10,
+            "FOLCLORICO/HISTORICO": 5,
+            "JOGADOR BASE": 2
+        }
+        self.mapa_letras = self.mapear_raridade(self.df_jogadores)
+
+    def mapear_raridade(self, df):
+        # Considera nomes e sinônimos para saber todas as letras possíveis
+        dados = []
+        for index, row in df.iterrows():
+            nomes_aceitos = self._nomes_validos(row)
+            letras_adicionadas = set()
+            for nome in nomes_aceitos:
+                if nome:
+                    letra = nome[0].upper()
+                    # Não duplica contagem se o cara tiver sinônimo que comece com a mesma letra do nome
+                    if letra not in letras_adicionadas:
+                        dados.append({
+                            'posicao': row['posicao'],
+                            'letra_inicial': letra,
+                            'id_jogador': index
+                        })
+                        letras_adicionadas.add(letra)
+        
+        if not dados:
+            return pd.DataFrame()
+            
+        df_exp = pd.DataFrame(dados)
+        # Cria uma tabela de contagem de jogadores únicos: Letra Inicial vs Posição
+        mapa = df_exp.groupby(['posicao', 'letra_inicial'])['id_jogador'].nunique().unstack(fill_value=0)
+        return mapa
+
+    def sortear_letra_valida(self, posicao_atual):
+        import string, random
+        if self.mapa_letras.empty or posicao_atual not in self.mapa_letras.index:
+            return random.choice(string.ascii_uppercase)
+            
+        # Filtra apenas letras onde a contagem é maior que zero para aquela posição
+        letras_disponiveis = self.mapa_letras.columns[self.mapa_letras.loc[posicao_atual] > 0].tolist()
+        
+        if not letras_disponiveis:
+            return random.choice(string.ascii_uppercase)
+            
+        return random.choice(letras_disponiveis)
+
+    def _carregar_dados(self):
+        if not os.path.exists(self.data_path):
+            raise FileNotFoundError(f"Arquivo não encontrado: {self.data_path}")
+        df = pd.read_csv(self.data_path, sep=",")
+        df.fillna("", inplace=True)
+        return df
+
+    def _normalizar_texto(self, texto):
+        """Remove acentos e converte para minúsculas para comparação."""
+        if not isinstance(texto, str):
+            return ""
+        texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+        return texto.lower().strip()
+
+    def _nomes_validos(self, row):
+        """Retorna uma lista de nomes válidos (nome principal + sinônimos) normalizados."""
+        nomes = [self._normalizar_texto(row['nome'])]
+        if row['sinonimos']:
+            sinonimos = [self._normalizar_texto(s) for s in row['sinonimos'].split(";")]
+            nomes.extend(sinonimos)
+        return nomes
+
+    def validar_palpite(self, palpite, letra_atual, posicao_alvo):
+        """
+        Verifica se o palpite é um jogador válido para a posição que comece com a letra.
+        """
+        palpite_norm = self._normalizar_texto(palpite)
+        letra_norm = self._normalizar_texto(letra_atual)[0]
+
+        # Verifica se começa com a letra exigida
+        if not palpite_norm.startswith(letra_norm):
+            return False, "O nome não começa com a letra exigida.", 0, None
+
+        for index, row in self.df_jogadores.iterrows():
+            if row['posicao'] == posicao_alvo:
+                nomes_aceitos = self._nomes_validos(row)
+                if palpite_norm in nomes_aceitos:
+                    categoria = row['categoria']
+                    pontos_base = self.pontos_categoria.get(categoria, 1)
+                    
+                    # Calcular bônus de raridade
+                    letra_upper = letra_norm.upper()
+                    qtd_possivel = 0
+                    if not self.mapa_letras.empty and posicao_alvo in self.mapa_letras.index and letra_upper in self.mapa_letras.columns:
+                        qtd_possivel = self.mapa_letras.loc[posicao_alvo, letra_upper]
+                    
+                    bonus_raridade = 0
+                    if qtd_possivel == 1:
+                        bonus_raridade = 50
+                    elif 2 <= qtd_possivel <= 3:
+                        bonus_raridade = 20
+                        
+                    pontos_totais = pontos_base + bonus_raridade
+                    
+                    msg = f"Jogador {row['nome']} ({categoria}) (+{pontos_base})"
+                    if bonus_raridade > 0:
+                        msg += f" | 💎 BÔNUS DE RARIDADE (Apenas {int(qtd_possivel)} jogador(es) nesta letra): +{bonus_raridade} pts!"
+                        
+                    return True, msg, pontos_totais, row
+
+        return False, "Jogador não encontrado ou não pertence a esta posição.", 0, None
+
+    def processar_pulo(self, pulos_usados):
+        """
+        Processa os pontos a deduzir de acordo com os pulos já usados.
+        Retorna a dedução e a nova quantidade de pulos.
+        """
+        if pulos_usados == 0:
+            return 0, 1, "1º Pulo grátis"
+        elif pulos_usados == 1:
+            return -2, 2, "2º Pulo: Amarelo (-2 pts)"
+        else:
+            return -5, pulos_usados + 1, "Pulos seguintes: Vermelho (-5 pts)"
