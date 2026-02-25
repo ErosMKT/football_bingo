@@ -294,8 +294,10 @@ def desenhar_campo(tatica):
         
         nome_exibicao = ""
         
-        if pid in st.session_state.posicoes_preenchidas:
-            info = st.session_state.posicoes_preenchidas[pid]
+        posicoes_preenchidas = st.session_state.get("posicoes_preenchidas", {})
+        
+        if pid in posicoes_preenchidas:
+            info = posicoes_preenchidas[pid]
             cat = info['categoria']
             
             # Estilo diferente quando acertado
@@ -315,7 +317,8 @@ def desenhar_campo(tatica):
             nome_exibicao = info['nome']
             
         # Destaque para a posição selecionada no momento (pisca/chama atenção)
-        if pid == st.session_state.posicao_selecionada:
+        posicao_selecionada = st.session_state.get("posicao_selecionada", None)
+        if pid == posicao_selecionada:
              cor_borda = "#00d2ff" # Cyan/Blue brilhante
              largura_borda = 4
              texto_fonte_cor = "#fff"
@@ -511,11 +514,16 @@ if not st.session_state.jogo_iniciado:
                     st.rerun()
                     
     # ------------------ CRIAR NOVO JOGO ------------------
-    else:
+    elif not st.session_state.show_ranking:
         col_campo, col_controles = st.columns([3, 1])
         
+        # Carrega a tática apenas para exibição visual no Menu (usando 4-3-3 como padrão)
+        with open("data/taticas.json", "r") as f:
+            taticas_menu = json.load(f)
+        tatica_base_menu = taticas_menu.get(st.session_state.tatica_nome, taticas_menu["4-3-3"])
+        
         with col_campo:
-            fig_campo = desenhar_campo(tatica_base)
+            fig_campo = desenhar_campo(tatica_base_menu)
             # config={'staticPlot': True} desabilita pan/zoom em celulares
             st.plotly_chart(fig_campo, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
             
@@ -639,72 +647,72 @@ if not st.session_state.jogo_iniciado:
                 st.session_state.show_ranking = True
                 st.rerun()
 
-    # --------------- TELA DEDICADA DE RANKINGS ---------------
-    elif st.session_state.show_ranking and not st.session_state.jogo_iniciado:
-        st.markdown("<h2 style='text-align: center; color: #00d2ff;'>🏆 RANKINGS GLOBAIS 🏆</h2>", unsafe_allow_html=True)
-        st.divider()
+# --------------- TELA DEDICADA DE RANKINGS ---------------
+if st.session_state.show_ranking and not st.session_state.jogo_iniciado:
+    st.markdown("<h2 style='text-align: center; color: #00d2ff;'>🏆 RANKINGS GLOBAIS 🏆</h2>", unsafe_allow_html=True)
+    st.divider()
         
-        tab_ta, tab_cr = st.tabs(["🏁 TIME ATTACK", "⏱️ CORRIDA CONTRA O RELÓGIO"])
-        
-        leaderboard = carregar_leaderboard()
-        
-        # Estilo CSS para a tabela
-        tabela_css = """
-        <style>
-        .ranking-table { width: 100%; border-collapse: collapse; margin-bottom: 20px;}
-        .ranking-table th, .ranking-table td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
-        .ranking-table th { background-color: #1a1b26; color: #00d2ff; text-transform: uppercase; letter-spacing: 1px;}
-        .ranking-table tr:hover { background-color: #222; }
-        .medal-gold { color: gold; font-size: 20px; }
-        .medal-silver { color: silver; font-size: 20px; }
-        .medal-bronze { color: #cd7f32; font-size: 20px; }
-        </style>
-        """
-        st.markdown(tabela_css, unsafe_allow_html=True)
-        
-        def render_table(dados, is_time_attack=True):
-            if not dados:
-                st.warning("Ainda não há recordes registrados neste modo. Seja o primeiro!")
-                return
-                
-            html = '<table class="ranking-table"><tr><th>Pos</th><th>Nome</th><th>Score</th><th>Tempo</th><th>Tática</th><th>Data</th></tr>'
-            for i, reg in enumerate(dados[:10]):
-                icone = f"{i+1}º"
-                if i == 0: icone = "<span class='medal-gold'>🥇</span>"
-                elif i == 1: icone = "<span class='medal-silver'>🥈</span>"
-                elif i == 2: icone = "<span class='medal-bronze'>🥉</span>"
-                
-                html += f"""<tr>
-                    <td><b>{icone}</b></td>
-                    <td style='color:#fff; font-weight:bold;'>{reg.get('nome', '---')}</td>
-                    <td style='color:#00e676; font-weight:bold;'>{reg.get('pontuacao', '0')} PTS</td>
-                    <td style='color:#bbb;'>{reg.get('tempo_str', '---')}</td>
-                    <td style='color:#bbb;'>{reg.get('tatica', '---')}</td>
-                    <td style='color:#777; font-size: 12px;'>{reg.get('data', '---')}</td>
-                </tr>"""
-            html += "</table>"
-            st.markdown(html, unsafe_allow_html=True)
+    tab_ta, tab_cr = st.tabs(["🏁 TIME ATTACK", "⏱️ CORRIDA CONTRA O RELÓGIO"])
+    
+    leaderboard = carregar_leaderboard()
+    
+    # Estilo CSS para a tabela
+    tabela_css = """
+    <style>
+    .ranking-table { width: 100%; border-collapse: collapse; margin-bottom: 20px;}
+    .ranking-table th, .ranking-table td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+    .ranking-table th { background-color: #1a1b26; color: #00d2ff; text-transform: uppercase; letter-spacing: 1px;}
+    .ranking-table tr:hover { background-color: #222; }
+    .medal-gold { color: gold; font-size: 20px; }
+    .medal-silver { color: silver; font-size: 20px; }
+    .medal-bronze { color: #cd7f32; font-size: 20px; }
+    </style>
+    """
+    st.markdown(tabela_css, unsafe_allow_html=True)
+    
+    def render_table(dados, is_time_attack=True):
+        if not dados:
+            st.warning("Ainda não há recordes registrados neste modo. Seja o primeiro!")
+            return
             
-        with tab_ta:
-            # Time Attack prioriza menor tempo, em caso de empate, maior pontuação
-            dados_ta = [r for r in leaderboard if not r.get("modo") or r.get("modo") == "Time Attack"]
-            dados_ta_sorted = sorted(dados_ta, key=lambda x: (x.get("tempo_segundos", float('inf')), -x.get("pontuacao", 0)))
-            render_table(dados_ta_sorted, True)
+        html = '<table class="ranking-table"><tr><th>Pos</th><th>Nome</th><th>Score</th><th>Tempo</th><th>Tática</th><th>Data</th></tr>'
+        for i, reg in enumerate(dados[:10]):
+            icone = f"{i+1}º"
+            if i == 0: icone = "<span class='medal-gold'>🥇</span>"
+            elif i == 1: icone = "<span class='medal-silver'>🥈</span>"
+            elif i == 2: icone = "<span class='medal-bronze'>🥉</span>"
             
-        with tab_cr:
-            # Corrida Contra o Relógio prioriza maior Pontuação
-            dados_cr = [r for r in leaderboard if r.get("modo") == "Corrida Relogio"]
-            dados_cr_sorted = sorted(dados_cr, key=lambda x: (-x.get("pontuacao", 0), x.get("tempo_segundos", float('inf'))))
-            render_table(dados_cr_sorted, False)
+            html += f"""<tr>
+                <td><b>{icone}</b></td>
+                <td style='color:#fff; font-weight:bold;'>{reg.get('nome', '---')}</td>
+                <td style='color:#00e676; font-weight:bold;'>{reg.get('pontuacao', '0')} PTS</td>
+                <td style='color:#bbb;'>{reg.get('tempo_str', '---')}</td>
+                <td style='color:#bbb;'>{reg.get('tatica', '---')}</td>
+                <td style='color:#777; font-size: 12px;'>{reg.get('data', '---')}</td>
+            </tr>"""
+        html += "</table>"
+        st.markdown(html, unsafe_allow_html=True)
+        
+    with tab_ta:
+        # Time Attack prioriza menor tempo, em caso de empate, maior pontuação
+        dados_ta = [r for r in leaderboard if not r.get("modo") or r.get("modo") == "Time Attack"]
+        dados_ta_sorted = sorted(dados_ta, key=lambda x: (x.get("tempo_segundos", float('inf')), -x.get("pontuacao", 0)))
+        render_table(dados_ta_sorted, True)
+        
+    with tab_cr:
+        # Corrida Contra o Relógio prioriza maior Pontuação
+        dados_cr = [r for r in leaderboard if r.get("modo") == "Corrida Relogio"]
+        dados_cr_sorted = sorted(dados_cr, key=lambda x: (-x.get("pontuacao", 0), x.get("tempo_segundos", float('inf'))))
+        render_table(dados_cr_sorted, False)
 
-        st.divider()
-        col_voltar, _, _ = st.columns([1, 1, 1])
-        with col_voltar:
-            if st.button("🔙 VOLTAR AO MENU PRINCIPAL", use_container_width=True, type="secondary"):
-                st.session_state.show_ranking = False
-                st.rerun()
+    st.divider()
+    col_voltar, _, _ = st.columns([1, 1, 1])
+    with col_voltar:
+        if st.button("🔙 VOLTAR AO MENU PRINCIPAL", use_container_width=True, type="secondary"):
+            st.session_state.show_ranking = False
+            st.rerun()
 
-else:
+elif st.session_state.jogo_iniciado:
     # Layout do Jogo: Esquerda (Controles & Info) / Direita (Campo Tático)
     col1, col2 = st.columns([1.5, 2.5])
     
