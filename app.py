@@ -129,6 +129,57 @@ st.markdown("""
         letter-spacing: 2px;
         text-align: right;
     }
+    
+    /* Layout Responsivo para o Header do Jogo */
+    .game-header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 20px;
+    }
+    .game-header-left {
+        flex: 2;
+    }
+    .letter-display-wrapper {
+        display: flex;
+        align-items: center;
+        margin-left: 10px;
+    }
+    .pos-display {
+        font-size: 50px;
+        font-weight: 900;
+        color: #fff;
+        text-shadow: 0 0 10px #00d2ff, 0 0 20px #00d2ff, 0 0 40px #00d2ff;
+        margin-left: 40px;
+        text-transform: uppercase;
+    }
+    .game-header-right {
+        flex: 1;
+        text-align: right;
+    }
+    
+    /* Adaptações para Smartphone (Mobile) */
+    @media (max-width: 768px) {
+        /* Reduzir letras gigantes */
+        .glowing-letter { font-size: 70px; margin-top: -10px; }
+        .pos-display { font-size: 30px; margin-left: 15px; }
+        .letter-label { font-size: 18px; }
+        .timer-display { font-size: 32px; margin-top: 5px; }
+        
+        /* Empilhar o painel ao invés de linha no Mobile */
+        .game-header-container {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+        }
+        .game-header-right {
+            text-align: left;
+            width: 100%;
+        }
+        .timer-label, .timer-display {
+            text-align: left;
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -678,28 +729,27 @@ else:
             pos_display = f"{pos_str} <span style='font-size: 20px; color: #aaa; text-shadow: none; font-weight: normal; vertical-align: middle;'>{num_pos}</span>"
             
             html_code = f"""
-<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px;">
-    <div style="flex: 2;">
+<div class="game-header-container">
+    <div class="game-header-left">
         <div class="letter-label" style="margin-bottom: 10px;">TARGET LETTER & POSITION {raridade_ui}</div>
-        <div style="display: flex; align-items: center; margin-left: 10px;">
+        <div class="letter-display-wrapper">
             <div class="glowing-letter" style="text-align: left; margin-bottom: 0px;">{letra}</div>
-            <div style="font-size: 50px; font-weight: 900; color: #fff; text-shadow: 0 0 10px #00d2ff, 0 0 20px #00d2ff, 0 0 40px #00d2ff; margin-left: 40px; text-transform: uppercase;">
+            <div class="pos-display">
                 {pos_display}
             </div>
         </div>
     </div>
-    <div style="flex: 1; text-align: right;">
+    <div class="game-header-right">
         <div class="timer-label">TIME REMAINING</div>
         <div class="timer-display">{tempo_str}</div>
     </div>
 </div>
 """
             st.markdown(html_code, unsafe_allow_html=True)
-        else:
             # Layout simplificado para Fim de Jogo (sem letra/posição quebram o HTML)
             st.markdown(f"""
-<div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
-    <div style="text-align: right;">
+<div class="game-header-container" style="justify-content: flex-end;">
+    <div class="game-header-right">
         <div class="timer-label">TOTAL TIME</div>
         <div class="timer-display" style="color: #aaa;">{tempo_str}</div>
     </div>
