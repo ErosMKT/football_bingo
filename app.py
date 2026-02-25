@@ -191,6 +191,13 @@ def load_taticas_all():
 
 taticas = load_taticas_all()
 
+# Limpar memória da sessão
+def limpar_sessao():
+    keys_to_preserve = ["db_path", "player_name", "tatica_nome", "show_ranking", "is_multiplayer", "modo_multi", "room_id", "morte_subita"]
+    for key in list(st.session_state.keys()):
+        if key not in keys_to_preserve:
+            del st.session_state[key]
+
 # Inicializar Sessão
 if "jogo_iniciado" not in st.session_state:
     st.session_state.jogo_iniciado = False
@@ -204,7 +211,7 @@ if "show_ranking" not in st.session_state:
 # Previne renderização do motor antes de escolher DB
 if st.session_state.jogo_iniciado:
     @st.cache_resource
-    def load_motor_with_path(path):
+    def load_motor_with_path(path, _version=2):
         return MotorJogo(data_path=path)
         
     motor = load_motor_with_path(st.session_state.db_path)
@@ -216,6 +223,8 @@ if st.session_state.jogo_iniciado:
         st.session_state.pulos_usados = 0
     if "categorias_usadas" not in st.session_state:
         st.session_state.categorias_usadas = {"LENDA": 0, "FOLCLORICO/HISTORICO": 0, "JOGADOR BASE": 0}
+    if "letras_usadas" not in st.session_state:
+        st.session_state.letras_usadas = set()
     if "posicoes_preenchidas" not in st.session_state:
         st.session_state.posicoes_preenchidas = {}
     if "start_time" not in st.session_state:
@@ -240,7 +249,12 @@ if st.session_state.jogo_iniciado:
         return ""
 
     if "letra_atual" not in st.session_state:
-        st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(st.session_state.posicao_selecionada))
+        st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(st.session_state.posicao_selecionada), st.session_state.letras_usadas)
+        
+    if "ultimo_erro" not in st.session_state:
+        st.session_state.ultimo_erro = ""
+    if "ultimo_erro_tipo" not in st.session_state:
+        st.session_state.ultimo_erro_tipo = ""
 
 # --- FUNÇÃO PARA DESENHAR O CAMPO ---
 def desenhar_campo(tatica):
@@ -309,6 +323,10 @@ def desenhar_campo(tatica):
                 cor_ponto = "#c0c0c0" # Prata
                 texto_fonte_cor = "#000"
                 cor_borda = "rgba(192, 192, 192, 0.8)"
+            elif cat == "UNFILLED":
+                cor_ponto = "#2a2a2a" # Escuro
+                texto_fonte_cor = "#ff4d4d" # Vermelho
+                cor_borda = "rgba(255, 77, 77, 0.6)"
             else:
                 cor_ponto = "#00e676" # Verde neon
                 texto_fonte_cor = "#000"
@@ -757,7 +775,7 @@ elif st.session_state.jogo_iniciado:
                         if prox_posicoes:
                             prox_pos = random.choice(prox_posicoes)
                             st.session_state.posicao_selecionada = prox_pos
-                            st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos))
+                            st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos), st.session_state.letras_usadas)
                             st.session_state.start_time = time.time() # Reset 60s timer
                         else:
                             st.session_state.posicao_selecionada = None
@@ -778,8 +796,8 @@ elif st.session_state.jogo_iniciado:
         # Alerta de Raridade
         raridade_ui = ""
         letra_u = st.session_state.letra_atual.upper() if st.session_state.letra_atual else ""
-        if pos_str and not motor.mapa_letras.empty and pos_str in motor.mapa_letras.index and letra_u in motor.mapa_letras.columns:
-            qtd = motor.mapa_letras.loc[pos_str, letra_u]
+        if pos_str and isinstance(motor.mapa_letras, dict) and pos_str in motor.mapa_letras and letra_u in motor.mapa_letras[pos_str]:
+            qtd = motor.mapa_letras[pos_str][letra_u]
             if qtd == 1:
                 raridade_ui = "<span style='color:gold; font-size:14px; margin-left:10px;'>🦄💎 UNICORN (Única opção)</span>"
             elif 2 <= qtd <= 3:
@@ -947,6 +965,13 @@ elif st.session_state.jogo_iniciado:
                 width=0,
             )
     
+            # --- Exibir erro persistente se houver ---
+            if st.session_state.get("ultimo_erro"):
+                if st.session_state.get("ultimo_erro_tipo") == "ERRO_POSICAO":
+                    st.error(st.session_state.ultimo_erro, icon="❌")
+                else:
+                    st.warning(st.session_state.ultimo_erro, icon="⚠️")
+
             with st.form("guess_form", clear_on_submit=True):
                 palpite = st.text_input("Player Name:", key="palpite_input", placeholder="e.g. Someone starting with E", label_visibility="collapsed")
                 submit_button = st.form_submit_button("STOP! (SUBMIT)")
@@ -971,7 +996,8 @@ elif st.session_state.jogo_iniciado:
                         st.session_state.game_over_derrota = True
                         st.toast("🟥 CARTÃO VERMELHO! Você saltou demais e foi EXPULSO!", icon="🟥")
                     else:
-                        st.session_state.letra_atual = motor.sortear_letra_valida(pos_str)
+                        st.session_state.ultimo_erro = ""
+                        st.session_state.letra_atual = motor.sortear_letra_valida(pos_str, st.session_state.letras_usadas)
                         st.session_state.start_time = time.time() # Reset 60s timer
                     st.rerun()
             else:
@@ -982,7 +1008,8 @@ elif st.session_state.jogo_iniciado:
                             deducao, novos_pulos, msg = motor.processar_pulo(st.session_state.pulos_usados)
                             st.session_state.pontuacao += deducao
                             st.session_state.pulos_usados = novos_pulos
-                            st.session_state.letra_atual = motor.sortear_letra_valida(pos_str)
+                            st.session_state.ultimo_erro = ""
+                            st.session_state.letra_atual = motor.sortear_letra_valida(pos_str, st.session_state.letras_usadas)
                             st.rerun()
                     with col_skip2:
                         if st.button("CHANGE POSITION", key="btn_pos"):
@@ -992,7 +1019,9 @@ elif st.session_state.jogo_iniciado:
                             
                             outras_posicoes = [p for p in posicoes_disponiveis if p != escolha]
                             if outras_posicoes:
+                                st.session_state.ultimo_erro = ""
                                 st.session_state.posicao_selecionada = random.choice(outras_posicoes)
+                                # Mantem a letra atual propositalmente para estrategia
                                 st.rerun()
                             else:
                                 st.error("No other positions left!")
@@ -1003,17 +1032,19 @@ elif st.session_state.jogo_iniciado:
                         if st.button("NEW LETTER (-10 PTS)"):
                             st.session_state.pontuacao -= 10
                             st.session_state.pulos_usados += 1
-                            st.session_state.letra_atual = motor.sortear_letra_valida(pos_str)
+                            st.session_state.ultimo_erro = ""
+                            st.session_state.letra_atual = motor.sortear_letra_valida(pos_str, st.session_state.letras_usadas)
                             st.rerun()
                     with col_skip2:
                         if st.button("GIVE UP POSITION"):
                             st.session_state.pulos_usados += 1
-                            st.session_state.posicoes_preenchidas[escolha] = {"nome": "UNFILLED", "categoria": "JOGADOR BASE"}
+                            st.session_state.posicoes_preenchidas[escolha] = {"nome": "❌", "categoria": "UNFILLED"}
                             prox_posicoes = [p['id'] for p in tatica_base if p['id'] not in st.session_state.posicoes_preenchidas]
                             if prox_posicoes:
                                 prox_pos = random.choice(prox_posicoes)
+                                st.session_state.ultimo_erro = ""
                                 st.session_state.posicao_selecionada = prox_pos
-                                st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos))
+                                st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos), st.session_state.letras_usadas)
                             else:
                                 st.session_state.posicao_selecionada = None
                                 st.session_state.end_time = time.time()
@@ -1022,7 +1053,8 @@ elif st.session_state.jogo_iniciado:
             # Refresh DB just in case
             if st.button("🔄 REFRESH DB"):
                 st.cache_resource.clear()
-                st.session_state.letra_atual = load_motor_with_path(st.session_state.db_path).sortear_letra_valida(get_pos_str(st.session_state.posicao_selecionada))
+                st.session_state.ultimo_erro = ""
+                st.session_state.letra_atual = load_motor_with_path(st.session_state.db_path).sortear_letra_valida(get_pos_str(st.session_state.posicao_selecionada), st.session_state.letras_usadas)
                 st.rerun()
                 
             if submit_button:
@@ -1049,6 +1081,7 @@ elif st.session_state.jogo_iniciado:
                         
                     status, msg, pontos, row = motor.validar_palpite(palpite, st.session_state.letra_atual, pos_str, categorias_para_validacao, modo_jogo=modo_atual)
                     if status == "ACERTO":
+                        st.session_state.ultimo_erro = ""
                         bonus_velocidade = 0
                         msg_bonus = ""
                         
@@ -1072,9 +1105,13 @@ elif st.session_state.jogo_iniciado:
                         cat = row['categoria']
                         st.session_state.categorias_usadas[cat] = st.session_state.categorias_usadas.get(cat, 0) + 1
                         
+                        # Adiciona a letra usada ao set de letras usadas no jogo
+                        if st.session_state.letra_atual:
+                            st.session_state.letras_usadas.add(st.session_state.letra_atual.upper())
+                        
                         st.session_state.pontuacao += pontos_totais
                         st.session_state.posicoes_preenchidas[escolha] = {
-                            "nome": row['nome'],
+                            "nome": row.get('nome_display', row['nome']),
                             "categoria": row['categoria']
                         }
                         
@@ -1082,7 +1119,7 @@ elif st.session_state.jogo_iniciado:
                         if prox_posicoes:
                             prox_pos = random.choice(prox_posicoes)
                             st.session_state.posicao_selecionada = prox_pos
-                            st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos))
+                            st.session_state.letra_atual = motor.sortear_letra_valida(get_pos_str(prox_pos), st.session_state.letras_usadas)
                             if modo_atual == "Corrida Relogio":
                                 st.session_state.start_time = time.time() # Reseta timer dos 60s
                         else:
@@ -1091,9 +1128,13 @@ elif st.session_state.jogo_iniciado:
                         
                         st.rerun()
                     elif status == "ERRO_POSICAO":
-                        st.error(msg)
+                        st.session_state.ultimo_erro = msg
+                        st.session_state.ultimo_erro_tipo = status
+                        st.rerun()
                     else:
-                        st.warning(msg)
+                        st.session_state.ultimo_erro = msg
+                        st.session_state.ultimo_erro_tipo = status
+                        st.rerun()
                 else:
                     st.warning("Digite um nome!")
                     
@@ -1120,8 +1161,8 @@ elif st.session_state.jogo_iniciado:
             st.markdown(f"**Tempo Total da Partida:** {tempo_final_str}")
             
             # --- RESUMO DA ESCALAÇÃO ---
-            preenchidos = len(st.session_state.posicoes_preenchidas)
-            st.markdown(f"**📋 Escalação Final ({preenchidos}/11) | Score: {st.session_state.pontuacao} pts**")
+            preenchidos_reais = len([v for v in st.session_state.posicoes_preenchidas.values() if v.get("categoria") != "UNFILLED"])
+            st.markdown(f"**📋 Escalação Final ({preenchidos_reais}/11) | Score: {st.session_state.pontuacao} pts**")
             
             cols_squad = st.columns(2)
             for i, pos in enumerate(tatica_base):
