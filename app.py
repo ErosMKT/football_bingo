@@ -198,6 +198,8 @@ if "tatica_nome" not in st.session_state:
     st.session_state.tatica_nome = "4-3-3"
 if "db_path" not in st.session_state:
     st.session_state.db_path = "data/jogadores.csv"
+if "show_ranking" not in st.session_state:
+    st.session_state.show_ranking = False
 
 # Previne renderização do motor antes de escolher DB
 if st.session_state.jogo_iniciado:
@@ -371,7 +373,7 @@ def carregar_leaderboard():
     except:
         return []
 
-def salvar_no_leaderboard(nome, tempo_str, tempo_segundos, pontuacao, tatica):
+def salvar_no_leaderboard(nome, tempo_str, tempo_segundos, pontuacao, tatica, modo="Time Attack"):
     caminho_hist = "data/historico.json"
     historico = carregar_leaderboard()
     novo_registro = {
@@ -380,6 +382,7 @@ def salvar_no_leaderboard(nome, tempo_str, tempo_segundos, pontuacao, tatica):
         "tempo_segundos": tempo_segundos,
         "pontuacao": pontuacao,
         "tatica": tatica,
+        "modo": modo,
         "data": time.strftime("%d/%m/%Y")
     }
     historico.append(novo_registro)
@@ -509,9 +512,14 @@ if not st.session_state.jogo_iniciado:
                     
     # ------------------ CRIAR NOVO JOGO ------------------
     else:
-        col_left, col_right = st.columns([1, 1])
+        col_campo, col_controles = st.columns([3, 1])
         
-        with col_left:
+        with col_campo:
+            fig_campo = desenhar_campo(tatica_base)
+            # config={'staticPlot': True} desabilita pan/zoom em celulares
+            st.plotly_chart(fig_campo, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
+            
+        with col_controles:
             st.markdown("### Configuração da Partida")
             st.write("Antes de entrar em campo, defina as configurações da sua partida:")
             
@@ -624,30 +632,77 @@ if not st.session_state.jogo_iniciado:
                     st.session_state.is_host = True
                     st.rerun()
                 
-        with col_right:
-            st.markdown("### 🏆 Top 10 - Speedrunners")
-            leaderboard = carregar_leaderboard()
-            if leaderboard:
-                top_10 = leaderboard[:10]
-                st.markdown(
-                    """
-                    <style>
-                    .ranking-table { width: 100%; border-collapse: collapse; }
-                    .ranking-table th, .ranking-table td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-                    .ranking-table th { background-color: #222; color: #fff; }
-                    </style>
-                    <table class="ranking-table">
-                    <tr><th>Pos</th><th>Nome</th><th>Tempo</th><th>Pts</th><th>Tática</th></tr>
-                    """, unsafe_allow_html=True
-                )
-                linhas_tabela = ""
-                for i, r in enumerate(top_10):
-                    icone = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}º"
-                    linhas_tabela += f"<tr><td>{icone}</td><td>{r['nome']}</td><td><b>{r['tempo_str']}</b></td><td>{r['pontuacao']}</td><td>{r['tatica']}</td></tr>"
+        with col_controles:
+            st.markdown("### 🏆 Hall da Fama")
+            st.info("Veja os recordes globais de velocidade e pontuação dos Modos Single Player!")
+            if st.button("🏅 VER RANKINGS GLOBAIS", use_container_width=True):
+                st.session_state.show_ranking = True
+                st.rerun()
+
+    # --------------- TELA DEDICADA DE RANKINGS ---------------
+    elif st.session_state.show_ranking and not st.session_state.jogo_iniciado:
+        st.markdown("<h2 style='text-align: center; color: #00d2ff;'>🏆 RANKINGS GLOBAIS 🏆</h2>", unsafe_allow_html=True)
+        st.divider()
+        
+        tab_ta, tab_cr = st.tabs(["🏁 TIME ATTACK", "⏱️ CORRIDA CONTRA O RELÓGIO"])
+        
+        leaderboard = carregar_leaderboard()
+        
+        # Estilo CSS para a tabela
+        tabela_css = """
+        <style>
+        .ranking-table { width: 100%; border-collapse: collapse; margin-bottom: 20px;}
+        .ranking-table th, .ranking-table td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+        .ranking-table th { background-color: #1a1b26; color: #00d2ff; text-transform: uppercase; letter-spacing: 1px;}
+        .ranking-table tr:hover { background-color: #222; }
+        .medal-gold { color: gold; font-size: 20px; }
+        .medal-silver { color: silver; font-size: 20px; }
+        .medal-bronze { color: #cd7f32; font-size: 20px; }
+        </style>
+        """
+        st.markdown(tabela_css, unsafe_allow_html=True)
+        
+        def render_table(dados, is_time_attack=True):
+            if not dados:
+                st.warning("Ainda não há recordes registrados neste modo. Seja o primeiro!")
+                return
                 
-                st.markdown(linhas_tabela + "</table>", unsafe_allow_html=True)
-            else:
-                st.write("Nenhum recorde registrado ainda. Seja o primeiro!")
+            html = '<table class="ranking-table"><tr><th>Pos</th><th>Nome</th><th>Score</th><th>Tempo</th><th>Tática</th><th>Data</th></tr>'
+            for i, reg in enumerate(dados[:10]):
+                icone = f"{i+1}º"
+                if i == 0: icone = "<span class='medal-gold'>🥇</span>"
+                elif i == 1: icone = "<span class='medal-silver'>🥈</span>"
+                elif i == 2: icone = "<span class='medal-bronze'>🥉</span>"
+                
+                html += f"""<tr>
+                    <td><b>{icone}</b></td>
+                    <td style='color:#fff; font-weight:bold;'>{reg.get('nome', '---')}</td>
+                    <td style='color:#00e676; font-weight:bold;'>{reg.get('pontuacao', '0')} PTS</td>
+                    <td style='color:#bbb;'>{reg.get('tempo_str', '---')}</td>
+                    <td style='color:#bbb;'>{reg.get('tatica', '---')}</td>
+                    <td style='color:#777; font-size: 12px;'>{reg.get('data', '---')}</td>
+                </tr>"""
+            html += "</table>"
+            st.markdown(html, unsafe_allow_html=True)
+            
+        with tab_ta:
+            # Time Attack prioriza menor tempo, em caso de empate, maior pontuação
+            dados_ta = [r for r in leaderboard if not r.get("modo") or r.get("modo") == "Time Attack"]
+            dados_ta_sorted = sorted(dados_ta, key=lambda x: (x.get("tempo_segundos", float('inf')), -x.get("pontuacao", 0)))
+            render_table(dados_ta_sorted, True)
+            
+        with tab_cr:
+            # Corrida Contra o Relógio prioriza maior Pontuação
+            dados_cr = [r for r in leaderboard if r.get("modo") == "Corrida Relogio"]
+            dados_cr_sorted = sorted(dados_cr, key=lambda x: (-x.get("pontuacao", 0), x.get("tempo_segundos", float('inf'))))
+            render_table(dados_cr_sorted, False)
+
+        st.divider()
+        col_voltar, _, _ = st.columns([1, 1, 1])
+        with col_voltar:
+            if st.button("🔙 VOLTAR AO MENU PRINCIPAL", use_container_width=True, type="secondary"):
+                st.session_state.show_ranking = False
+                st.rerun()
 
 else:
     # Layout do Jogo: Esquerda (Controles & Info) / Direita (Campo Tático)
@@ -1147,12 +1202,14 @@ else:
                 else:
                     if not st.session_state.get("recorde_salvo"):
                         nome_jogador = st.session_state.get("player_name", "Desconhecido")
+                        # Adiciona a variavel do modo para filtrar no ranking
                         salvar_no_leaderboard(
                             nome_jogador,
                             tempo_final_str,
                             tempo_final_segundos,
                             ponto_final,
-                            st.session_state.tatica_nome
+                            st.session_state.tatica_nome,
+                            modo=st.session_state.get("modo_atual_single", "Time Attack")
                         )
                         st.session_state.recorde_salvo = True
                     st.success(f"🏅 Estatísticas salvas no placar para {st.session_state.get('player_name', '')}!")
