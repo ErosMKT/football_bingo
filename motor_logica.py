@@ -21,7 +21,7 @@ class MotorJogo:
         self.pontos_categoria = {
             "LENDA": 10,
             "FOLCLORICO/HISTORICO": 5,
-            "JOGADOR BASE": 2
+            "JOGADOR BASE": 0
         }
 
     def _normalizar_texto(self, texto):
@@ -168,6 +168,13 @@ class MotorJogo:
             
         palpite_norm = self._normalizar_texto(palpite)
         letra_norm = self._normalizar_texto(letra_atual)[0].upper()
+        
+        # Filtro Anti-Loteria 1: Blacklist de Nomes Comuns de uma só palavra
+        palpite_palavras = palpite_norm.split()
+        if len(palpite_palavras) == 1:
+            nomes_comuns_proibidos = {"joao", "jose", "carlos", "lucas", "pedro", "silva", "santos", "oliveira", "souza", "costa", "rodrigues", "ferreira", "alves", "marcos", "paulo"}
+            if palpite_norm in nomes_comuns_proibidos:
+                return "ERRO_NOME_COMUM", f"O nome '{palpite.title()}' é muito comum ou genérico. Por favor, forneça um Sobrenome ou Apelido completo.", 0, None
 
         match_encontrado = None
         jogador_posicao_errada = None
@@ -195,12 +202,27 @@ class MotorJogo:
                     for n in nomes_aceitos:
                         # Fuzzy Matching (Busca por Similaridade)
                         seq = difflib.SequenceMatcher(None, palpite_norm, n)
-                        if seq.ratio() >= 0.85 and n.startswith(letra_norm.lower()):
-                            match_encontrado = comp.copy()
-                            match_encontrado['nome_usado'] = n
-                            break
-                        # Contém a string exata (útil para nomes curtos digitados no meio de nomes longos)
-                        if len(palpite_norm) >= 5 and (palpite_norm in n or n in palpite_norm) and n.startswith(letra_norm.lower()):
+                        
+                        # Filtro Anti-Loteria 2: Rigor na aceitação do Substring/Fuzzy
+                        is_valid = False
+                        
+                        if seq.ratio() >= 0.85:
+                            is_valid = True
+                        elif len(palpite_norm) >= 5 and (palpite_norm in n or n in palpite_norm):
+                            # Se for uma substring, só aceitamos se for uma palavra exata do nome original completo (ex: "silva" tem que ser "Silva" oficial)
+                            # ou se a similaridade de pelo menos uma das palavras bater alta.
+                            if len(palpite_palavras) == 1:
+                                nomes_split = n.split()
+                                if palpite_norm in nomes_split:
+                                    is_valid = True
+                                else:
+                                    # Para nomes únicos de dígito curto dentro de longos, exige 95% de aprovação (quase perfeito)
+                                    if difflib.SequenceMatcher(None, palpite_norm, n).ratio() >= 0.95:
+                                        is_valid = True
+                            else:
+                                is_valid = True # Se tiver mais de uma palavra, tá liberado o len > 5 na string
+                                
+                        if is_valid and n.startswith(letra_norm.lower()):
                             match_encontrado = comp.copy()
                             match_encontrado['nome_usado'] = n
                             break
@@ -230,7 +252,7 @@ class MotorJogo:
                 tabela = [30, 25, 20]
                 pontos_base = tabela[usos] if usos < len(tabela) else 1
             elif categoria == "JOGADOR BASE" or categoria == "BASE":
-                pontos_base = 10
+                pontos_base = 0
             
             # Bônus de Raridade
             qtd_possivel = 0
